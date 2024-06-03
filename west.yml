@@ -1,0 +1,13 @@
+manifest:
+  projects:
+    - name: zephyr
+      revision: v3.6.0
+      url: https://github.com/zephyrproject-rtos/zephyr
+      import: true
+
+  self:
+    path: zephyr-playground
+    west-commands: scripts/west-commands.yml
+    userdata:
+      patches_dirs:
+        - patches

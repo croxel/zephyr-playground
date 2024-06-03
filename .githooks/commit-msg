@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+import re
+import sys
+
+COMMIT_MSG_PATTERN = r"[CXRD-[0-9]+] .+"
+
+# Receive the commit message file (.git/COMMIT_EDITMSG)
+COMMIT_MSG_FILE = sys.argv[1]
+
+# Throw an error if the message is empty
+with open(COMMIT_MSG_FILE, 'r') as f:
+    if not any(line.strip() for line in f):
+        print("[commit-msg] Empty commits are not allowed. Please, use the expected commit conventions", file=sys.stderr)
+        sys.exit(1)
+
+# Validate the commit message with the specified convention
+with open(COMMIT_MSG_FILE, 'r') as f:
+    commit_message = f.read()
+
+if not re.search(COMMIT_MSG_PATTERN, commit_message):
+    error_msg = f"[commit-msg] ERROR: Invalid commit message format\n> Commit message format: '[CXRD-1234] brief commit message' (max 50 characters)"
+    print(error_msg, file=sys.stderr)
+    print("[commit-msg] Aborting commit...", file=sys.stderr)
+    sys.exit(1)
+
+# If everything is ok, proceed with the commmit
+sys.exit(0)

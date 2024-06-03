@@ -1,0 +1,6 @@
+menu "Zephyr Playground"
+
+rsource "subsys/Kconfig"
+rsource "drivers/Kconfig"
+
+endmenu
