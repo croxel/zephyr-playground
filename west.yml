@@ -1,8 +1,8 @@
 manifest:
   projects:
     - name: zephyr
-      revision: main
-      url: https://github.com/zephyrproject-rtos/zephyr
+      revision: feature-add-lp5521-led-driver
+      url: https://github.com/croxel/zephyr
       import: true
 
   self:
