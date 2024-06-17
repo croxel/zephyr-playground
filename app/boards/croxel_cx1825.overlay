@@ -1,0 +1,14 @@
+/ {
+        aliases {
+                buzzer-pwm = &buzzer;
+        };
+
+        pwmbuzzer {
+                compatible = "pwm-leds";
+                status = "okay";
+
+                buzzer: buzzer_pwm {
+                        pwms = <&pwm0 0 PWM_HZ(4000) PWM_POLARITY_NORMAL>;
+                };
+        };
+};
