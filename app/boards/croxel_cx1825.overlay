@@ -1,4 +1,13 @@
 / {
+        chosen {
+                zephyr,shell-uart = &bt_nus_console_uart;
+        };
+
+        bt_nus_console_uart: bt_nus_console_uart {
+                compatible = "zephyr,nus-uart";
+                rx-fifo-size = <1024>;
+                tx-fifo-size = <1024>;
+        };
         aliases {
                 buzzer-pwm = &buzzer;
         };
