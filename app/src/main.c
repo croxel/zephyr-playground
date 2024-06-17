@@ -15,9 +15,9 @@
 LOG_MODULE_REGISTER(main);
 
 enum {
-	LED_RED,
-	LED_GREEN,
 	LED_BLUE,
+	LED_GREEN,
+	LED_RED,
 	LED_MAX
 };
 
@@ -45,7 +45,6 @@ void btn_rgb_work_cb(struct k_work *work)
 
 static struct btn_rgb_work_st btn_rgb_work_s = {.btn_rgb_work = Z_WORK_INITIALIZER(btn_rgb_work_cb),
 						.shld_rgb_on = false};
-
 
 static void sw0_btn_cb_handle(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
@@ -99,6 +98,11 @@ int main(void)
 	if (gpio_add_callback(sw0_btn.port, &sw0_btn_cb) ||
 	    gpio_pin_interrupt_configure_dt(&sw0_btn, GPIO_INT_EDGE_BOTH)) {
 		return 0;
+	}
+
+	/* Turn off all RGB LEDs */
+	for (int i = 0; i < LED_MAX; i++) {
+		led_off(rgb_led, i);
 	}
 
 	play_starting_seq();
