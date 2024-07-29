@@ -1,0 +1,4 @@
+tests:
+  app.hello_world:
+    platform_allow:
+      - native_sim
