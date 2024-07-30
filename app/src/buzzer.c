@@ -2,6 +2,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/pwm.h>
 #include <user_alerts/user_alerts.h>
+#include <user_button_actions/user_button_actions.h>
 #include <morse_beep_codes.h>
 
 LOG_MODULE_REGISTER(buzzer);
@@ -29,8 +30,20 @@ static struct user_alerts_channel _buzzer_ch = {
 	.pattern = NULL,
 };
 
+void buzzer_btn_action_handler(struct user_button_actions_channel *ch)
+{
+	if (ch->result.code == eUSER_BUTTON_DOUBLE_CLICK) {
+		user_alerts_channel_play(&_buzzer_ch, &_croxel_inc_morse_beeps, true);
+	}
+}
+
+SLL_LISTENER_DEFINE_NODE(user_button_actions,
+			buzzer_btn_action_listener,
+			.handler = buzzer_btn_action_handler);
+
 int play_bootup_buzzer_beeps(void)
 {
+	SLL_LISTENER_ADD_NODE(user_button_actions, buzzer_btn_action_listener);
 	user_alerts_channel_init_timer(&_buzzer_ch);
 	user_alerts_channel_play(&_buzzer_ch, &_zephyr_morse_beeps, true);
 	return 0;

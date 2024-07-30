@@ -11,4 +11,5 @@ target_sources(app PRIVATE
 	src/main.c
 	src/buzzer.c
 	src/ledui.c
+	src/user_button.c
 )

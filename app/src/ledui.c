@@ -2,6 +2,7 @@
 #include <zephyr/logging/log.h>
 #include <user_alerts/user_alerts.h>
 #include <zephyr/drivers/gpio.h>
+#include <user_button_actions/user_button_actions.h>
 
 LOG_MODULE_REGISTER(ledui);
 
@@ -56,9 +57,38 @@ static struct user_alerts_channel _bi_led_ch = {
 	.pattern = NULL,
 };
 
+const struct bi_led_alert_step _btn_click_bi_led_steps[] = {
+	{.ms = 50, .duty_1 = 0xFF, .duty_2 = 0x00},
+	{.ms = 450, .duty_1 = 0x00, .duty_2 = 0x00},
+	{.ms = 50, .duty_1 = 0x00, .duty_2 = 0xFF},
+	{.ms = 450, .duty_1 = 0x00, .duty_2 = 0x00},
+};
+struct user_alerts_pattern _btn_click_bi_led_pattern = {
+	.steps = _btn_click_bi_led_steps,
+	.steps_count = ARRAY_SIZE(_btn_click_bi_led_steps),
+	.loop_count = 0,
+};
+
+void led_btn_action_handler(struct user_button_actions_channel *ch)
+{
+	if (ch->result.code == eUSER_BUTTON_CLICK) {
+		if (_bi_led_ch.pattern == &_btn_click_bi_led_pattern) {
+			user_alerts_channel_stop(&_bi_led_ch, true);
+		} else {
+			user_alerts_channel_play(&_bi_led_ch, &_btn_click_bi_led_pattern, true);
+		}
+	}
+}
+
+SLL_LISTENER_DEFINE_NODE(user_button_actions,
+			led_btn_action_listener,
+			.handler = led_btn_action_handler);
+
 int play_bootup_led_blinks(void)
 {
 	int err;
+
+	SLL_LISTENER_ADD_NODE(user_button_actions, led_btn_action_listener);
 
 	err = gpio_is_ready_dt(&_bi_led_io.led1);
 	if (!err) {
