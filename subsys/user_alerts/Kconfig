@@ -1,0 +1,13 @@
+config USER_ALERTS
+	bool "enable user alert subsystem"
+	help
+	  this will enable capability to signal specific pattern on any output device
+	  such as buzzer, led etc to alter user
+
+if USER_ALERTS
+
+config USER_ALERTS_CHANNEL_QUEUE_SIZE
+	int "define maximum number of pending commands"
+	default 4
+
+endif

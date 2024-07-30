@@ -1,0 +1,10 @@
+/ {
+	aliases {
+		buzzer-pwm = &buzzer;
+	};
+
+	buzzer: buzzer {
+		compatible = "pwm-buzzer";
+		pwms = <&pwm0 0 PWM_HZ(4000) PWM_POLARITY_NORMAL>;
+	};
+};
