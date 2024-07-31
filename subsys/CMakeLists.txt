@@ -1,0 +1,2 @@
+add_subdirectory_ifdef(CONFIG_USER_ALERTS user_alerts)
+add_subdirectory_ifdef(CONFIG_USER_BUTTON_ACTIONS user_button_actions)

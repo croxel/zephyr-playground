@@ -1,0 +1,18 @@
+config USER_BUTTON_ACTIONS
+	bool "Enable user buttin actions monitoring"
+	select GPIO
+	help
+	  enable button monitoring to help user signal
+	  multiple actions to the user
+
+if USER_BUTTON_ACTIONS
+
+config USER_BUTTON_ACTION_HOLD_TIMEOUT_MS
+	int "timeout to detect button hold"
+	default 1000
+
+config USER_BUTTON_ACTION_RE_CLICK_TIMEOUT_MS
+	int "timeout to detect button hold"
+	default 250
+
+endif
