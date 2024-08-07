@@ -1,0 +1,2069 @@
+From 50b4ab133ed118b1b3e8704bfdfb7d0ac76fd4c5 Mon Sep 17 00:00:00 2001
+From: Anuj Pathak <anuj@croxel.com>
+Date: Sat, 3 Aug 2024 15:17:31 +0530
+Subject: [PATCH 1/1] [CXRD-5] Zephyr: Drivers: Led: LP5521
+
+- refactored lp5562 driver as lp55xx
+- added lp5521 support to lp55xx
+
+Signed-off-by: Anuj Pathak <anuj@croxel.com>
+---
+ drivers/led/CMakeLists.txt                    |    2 +-
+ drivers/led/Kconfig                           |    2 +-
+ .../led/{Kconfig.lp5562 => Kconfig.lp55xx}    |   10 +-
+ drivers/led/lp5562.c                          | 1005 -----------------
+ drivers/led/lp55xx.c                          |  794 +++++++++++++
+ dts/bindings/led/ti,lp5521.yaml               |   20 +
+ dts/bindings/led/ti,lp5562.yaml               |   17 +-
+ dts/bindings/led/ti,lp55xx.yaml               |   59 +
+ .../{led_lp5562 => led_lp55xx}/CMakeLists.txt |    0
+ .../{led_lp5562 => led_lp55xx}/README.rst     |    0
+ .../led_lp55xx/boards/croxel_cx1825.overlay   |   11 +
+ .../boards/nrf52840dk_nrf52840.overlay        |    0
+ .../{led_lp5562 => led_lp55xx}/prj.conf       |    0
+ .../{led_lp5562 => led_lp55xx}/sample.yaml    |    0
+ .../{led_lp5562 => led_lp55xx}/src/main.c     |    0
+ 15 files changed, 894 insertions(+), 1026 deletions(-)
+ rename drivers/led/{Kconfig.lp5562 => Kconfig.lp55xx} (50%)
+ delete mode 100644 drivers/led/lp5562.c
+ create mode 100644 drivers/led/lp55xx.c
+ create mode 100644 dts/bindings/led/ti,lp5521.yaml
+ create mode 100644 dts/bindings/led/ti,lp55xx.yaml
+ rename samples/drivers/{led_lp5562 => led_lp55xx}/CMakeLists.txt (100%)
+ rename samples/drivers/{led_lp5562 => led_lp55xx}/README.rst (100%)
+ create mode 100644 samples/drivers/led_lp55xx/boards/croxel_cx1825.overlay
+ rename samples/drivers/{led_lp5562 => led_lp55xx}/boards/nrf52840dk_nrf52840.overlay (100%)
+ rename samples/drivers/{led_lp5562 => led_lp55xx}/prj.conf (100%)
+ rename samples/drivers/{led_lp5562 => led_lp55xx}/sample.yaml (100%)
+ rename samples/drivers/{led_lp5562 => led_lp55xx}/src/main.c (100%)
+
+diff --git a/drivers/led/CMakeLists.txt b/drivers/led/CMakeLists.txt
+index 09ea5e202fd..3299ed9486e 100644
+--- a/drivers/led/CMakeLists.txt
++++ b/drivers/led/CMakeLists.txt
+@@ -12,7 +12,7 @@ zephyr_library_sources_ifdef(CONFIG_LED_PWM led_pwm.c)
+ zephyr_library_sources_ifdef(CONFIG_LED_XEC led_mchp_xec.c)
+ zephyr_library_sources_ifdef(CONFIG_LP3943 lp3943.c)
+ zephyr_library_sources_ifdef(CONFIG_LP50XX lp50xx.c)
+-zephyr_library_sources_ifdef(CONFIG_LP5562 lp5562.c)
++zephyr_library_sources_ifdef(CONFIG_LP55XX lp55xx.c)
+ zephyr_library_sources_ifdef(CONFIG_LP5569 lp5569.c)
+ zephyr_library_sources_ifdef(CONFIG_NCP5623 ncp5623.c)
+ zephyr_library_sources_ifdef(CONFIG_PCA9633 pca9633.c)
+diff --git a/drivers/led/Kconfig b/drivers/led/Kconfig
+index 26bf49cd5e2..40be51c38b4 100644
+--- a/drivers/led/Kconfig
++++ b/drivers/led/Kconfig
+@@ -31,7 +31,7 @@ source "drivers/led/Kconfig.ht16k33"
+ source "drivers/led/Kconfig.is31fl3216a"
+ source "drivers/led/Kconfig.lp3943"
+ source "drivers/led/Kconfig.lp50xx"
+-source "drivers/led/Kconfig.lp5562"
++source "drivers/led/Kconfig.lp55xx"
+ source "drivers/led/Kconfig.lp5569"
+ source "drivers/led/Kconfig.ncp5623"
+ source "drivers/led/Kconfig.npm1300"
+diff --git a/drivers/led/Kconfig.lp5562 b/drivers/led/Kconfig.lp55xx
+similarity index 50%
+rename from drivers/led/Kconfig.lp5562
+rename to drivers/led/Kconfig.lp55xx
+index ee11f84dbd4..6f8ac3f0a04 100644
+--- a/drivers/led/Kconfig.lp5562
++++ b/drivers/led/Kconfig.lp55xx
+@@ -1,13 +1,17 @@
+ # Copyright (c) 2018 Workaround GmbH
+ # SPDX-License-Identifier: Apache-2.0
+ 
+-config LP5562
++config LP55XX
+ 	bool "LP5562 LED driver"
+ 	default y
+-	depends on DT_HAS_TI_LP5562_ENABLED
++	depends on DT_HAS_TI_LP5562_ENABLED || DT_HAS_TI_LP5521_ENABLED
+ 	select I2C
+ 	help
+-	  Enable LED driver for LP5562.
++	  Enable LED driver for LP5562/21.
+ 
+ 	  LP5562 LED driver has 4 channels (RGBW). Each channel can drive up to
+ 	  25.5 mA per LED.
++	  while
++	  LP5521 LED driver has 3 channels (RGB). Each channel can drive up to
++	  25.5 mA per LED.
++
+diff --git a/drivers/led/lp5562.c b/drivers/led/lp5562.c
+deleted file mode 100644
+index d1a1f4031fb..00000000000
+--- a/drivers/led/lp5562.c
++++ /dev/null
+@@ -1,1005 +0,0 @@
+-/*
+- * Copyright (c) 2018 Workaround GmbH
+- *
+- * SPDX-License-Identifier: Apache-2.0
+- */
+-
+-#define DT_DRV_COMPAT ti_lp5562
+-
+-/**
+- * @file
+- * @brief LP5562 LED driver
+- *
+- * The LP5562 is a 4-channel LED driver that communicates over I2C. The four
+- * channels are expected to be connected to a red, green, blue and white LED.
+- * Each LED can be driven by two different sources.
+- *
+- * 1. The brightness of each LED can be configured directly by setting a
+- * register that drives the PWM of the connected LED.
+- *
+- * 2. A program can be transferred to the driver and run by one of the three
+- * available execution engines. Up to 16 commands can be defined in each
+- * program. Possible commands are:
+- *   - Set the brightness.
+- *   - Fade the brightness over time.
+- *   - Loop parts of the program or the whole program.
+- *   - Add delays.
+- *   - Synchronize between the engines.
+- *
+- * After the program has been transferred, it can run infinitely without
+- * communication between the host MCU and the driver.
+- */
+-
+-#include <zephyr/drivers/i2c.h>
+-#include <zephyr/drivers/led.h>
+-#include <zephyr/device.h>
+-#include <zephyr/kernel.h>
+-
+-#define LOG_LEVEL CONFIG_LED_LOG_LEVEL
+-#include <zephyr/logging/log.h>
+-LOG_MODULE_REGISTER(lp5562);
+-
+-#include "led_context.h"
+-
+-/* Registers */
+-#define LP5562_ENABLE             0x00
+-#define LP5562_OP_MODE            0x01
+-#define LP5562_B_PWM              0x02
+-#define LP5562_G_PWM              0x03
+-#define LP5562_R_PWM              0x04
+-#define LP5562_B_CURRENT          0x05
+-#define LP5562_G_CURRENT          0x06
+-#define LP5562_R_CURRENT          0x07
+-#define LP5562_CONFIG             0x08
+-#define LP5562_ENG1_PC            0x09
+-#define LP5562_ENG2_PC            0x0A
+-#define LP5562_ENG3_PC            0x0B
+-#define LP5562_STATUS             0x0C
+-#define LP5562_RESET              0x0D
+-#define LP5562_W_PWM              0x0E
+-#define LP5562_W_CURRENT          0x0F
+-#define LP5562_PROG_MEM_ENG1_BASE 0x10
+-#define LP5562_PROG_MEM_ENG2_BASE 0x30
+-#define LP5562_PROG_MEM_ENG3_BASE 0x50
+-#define LP5562_LED_MAP            0x70
+-
+-/*
+- * The wait command has six bits for the number of steps (max 63) with up to
+- * 15.6ms per step if the prescaler is set to 1. We round the step length
+- * however to 16ms for easier handling, so the maximum blinking period is
+- * therefore (16 * 63) = 1008ms. We round it down to 1000ms to be on the safe
+- * side.
+- */
+-#define LP5562_MAX_BLINK_PERIOD 1000
+-/*
+- * The minimum waiting period is 0.49ms with the prescaler set to 0 and one
+- * step. We round up to a full millisecond.
+- */
+-#define LP5562_MIN_BLINK_PERIOD 1
+-
+-/* Brightness limits in percent */
+-#define LP5562_MIN_BRIGHTNESS 0
+-#define LP5562_MAX_BRIGHTNESS 100
+-
+-/* Output current limits in 0.1 mA */
+-#define LP5562_MIN_CURRENT_SETTING 0
+-#define LP5562_MAX_CURRENT_SETTING 255
+-
+-/* Values for ENABLE register. */
+-#define LP5562_ENABLE_CHIP_EN (1 << 6)
+-#define LP5562_ENABLE_LOG_EN  (1 << 7)
+-
+-/* Values for CONFIG register. */
+-#define LP5562_CONFIG_EXTERNAL_CLOCK         0x00
+-#define LP5562_CONFIG_INTERNAL_CLOCK         0x01
+-#define LP5562_CONFIG_CLOCK_AUTOMATIC_SELECT 0x02
+-#define LP5562_CONFIG_PWRSAVE_EN             (1 << 5)
+-/* Enable 558 Hz frequency for PWM. Default is 256. */
+-#define LP5562_CONFIG_PWM_HW_FREQ_558        (1 << 6)
+-
+-/* Values for execution engine programs. */
+-#define LP5562_PROG_COMMAND_SET_PWM (1 << 6)
+-#define LP5562_PROG_COMMAND_RAMP_TIME(prescale, step_time) \
+-	(((prescale) << 6) | (step_time))
+-#define LP5562_PROG_COMMAND_STEP_COUNT(fade_direction, count) \
+-	(((fade_direction) << 7) | (count))
+-
+-/* Helper definitions. */
+-#define LP5562_PROG_MAX_COMMANDS 16
+-#define LP5562_MASK              0x03
+-#define LP5562_CHANNEL_MASK(channel) ((LP5562_MASK) << (channel << 1))
+-
+-/*
+- * Available channels. There are four LED channels usable with the LP5562. While
+- * they can be mapped to LEDs of any color, the driver's typical application is
+- * with a red, a green, a blue and a white LED. Since the data sheet's
+- * nomenclature uses RGBW, we keep it that way.
+- */
+-enum lp5562_led_channels {
+-	LP5562_CHANNEL_B,
+-	LP5562_CHANNEL_G,
+-	LP5562_CHANNEL_R,
+-	LP5562_CHANNEL_W,
+-
+-	LP5562_CHANNEL_COUNT,
+-};
+-
+-/*
+- * Each channel can be driven by directly assigning a value between 0 and 255 to
+- * it to drive the PWM or by one of the three execution engines that can be
+- * programmed for custom lighting patterns in order to reduce the I2C traffic
+- * for repetitive patterns.
+- */
+-enum lp5562_led_sources {
+-	LP5562_SOURCE_PWM,
+-	LP5562_SOURCE_ENGINE_1,
+-	LP5562_SOURCE_ENGINE_2,
+-	LP5562_SOURCE_ENGINE_3,
+-
+-	LP5562_SOURCE_COUNT,
+-};
+-
+-/* Operational modes of the execution engines. */
+-enum lp5562_engine_op_modes {
+-	LP5562_OP_MODE_DISABLED = 0x00,
+-	LP5562_OP_MODE_LOAD = 0x01,
+-	LP5562_OP_MODE_RUN = 0x02,
+-	LP5562_OP_MODE_DIRECT_CTRL = 0x03,
+-};
+-
+-/* Execution state of the engines. */
+-enum lp5562_engine_exec_states {
+-	LP5562_ENGINE_MODE_HOLD = 0x00,
+-	LP5562_ENGINE_MODE_STEP = 0x01,
+-	LP5562_ENGINE_MODE_RUN = 0x02,
+-	LP5562_ENGINE_MODE_EXEC = 0x03,
+-};
+-
+-/* Fading directions for programs executed by the engines. */
+-enum lp5562_engine_fade_dirs {
+-	LP5562_FADE_UP = 0x00,
+-	LP5562_FADE_DOWN = 0x01,
+-};
+-
+-struct lp5562_config {
+-	struct i2c_dt_spec bus;
+-	uint8_t r_current;
+-	uint8_t g_current;
+-	uint8_t b_current;
+-	uint8_t w_current;
+-};
+-
+-struct lp5562_data {
+-	struct led_data dev_data;
+-};
+-
+-/*
+- * @brief Get the register for the given LED channel used to directly write a
+- *	brightness value instead of using the execution engines.
+- *
+- * @param channel LED channel.
+- * @param reg     Pointer to the register address.
+- *
+- * @retval 0       On success.
+- * @retval -EINVAL If an invalid channel is given.
+- */
+-static int lp5562_get_pwm_reg(enum lp5562_led_channels channel, uint8_t *reg)
+-{
+-	switch (channel) {
+-	case LP5562_CHANNEL_W:
+-		*reg = LP5562_W_PWM;
+-		break;
+-	case LP5562_CHANNEL_R:
+-		*reg = LP5562_R_PWM;
+-		break;
+-	case LP5562_CHANNEL_G:
+-		*reg = LP5562_G_PWM;
+-		break;
+-	case LP5562_CHANNEL_B:
+-		*reg = LP5562_B_PWM;
+-		break;
+-	default:
+-		LOG_ERR("Invalid channel given.");
+-		return -EINVAL;
+-	}
+-
+-	return 0;
+-}
+-
+-/*
+- * @brief Get the base address for programs of the given execution engine.
+- *
+- * @param engine    Engine the base address is requested for.
+- * @param base_addr Pointer to the base address.
+- *
+- * @retval 0       On success.
+- * @retval -EINVAL If a source is given that is not a valid engine.
+- */
+-static int lp5562_get_engine_ram_base_addr(enum lp5562_led_sources engine,
+-					   uint8_t *base_addr)
+-{
+-	switch (engine) {
+-	case LP5562_SOURCE_ENGINE_1:
+-		*base_addr = LP5562_PROG_MEM_ENG1_BASE;
+-		break;
+-	case LP5562_SOURCE_ENGINE_2:
+-		*base_addr = LP5562_PROG_MEM_ENG2_BASE;
+-		break;
+-	case LP5562_SOURCE_ENGINE_3:
+-		*base_addr = LP5562_PROG_MEM_ENG3_BASE;
+-		break;
+-	default:
+-		return -EINVAL;
+-	}
+-
+-	return 0;
+-}
+-
+-/*
+- * @brief Helper to get the register bit shift for the execution engines.
+- *
+- * The engine with the highest index is placed on the lowest two bits in the
+- * OP_MODE and ENABLE registers.
+- *
+- * @param engine Engine the shift is requested for.
+- * @param shift  Pointer to the shift value.
+- *
+- * @retval 0       On success.
+- * @retval -EINVAL If a source is given that is not a valid engine.
+- */
+-static int lp5562_get_engine_reg_shift(enum lp5562_led_sources engine,
+-				       uint8_t *shift)
+-{
+-	switch (engine) {
+-	case LP5562_SOURCE_ENGINE_1:
+-		*shift = 4U;
+-		break;
+-	case LP5562_SOURCE_ENGINE_2:
+-		*shift = 2U;
+-		break;
+-	case LP5562_SOURCE_ENGINE_3:
+-		*shift = 0U;
+-		break;
+-	default:
+-		return -EINVAL;
+-	}
+-
+-	return 0;
+-}
+-
+-/*
+- * @brief Convert a time in milliseconds to a combination of prescale and
+- *	step_time for the execution engine programs.
+- *
+- * This function expects the given time in milliseconds to be in the allowed
+- * range the device can handle (0ms to 1000ms).
+- *
+- * @param data      Capabilities of the driver.
+- * @param ms        Time to be converted in milliseconds [0..1000].
+- * @param prescale  Pointer to the prescale value.
+- * @param step_time Pointer to the step_time value.
+- */
+-static void lp5562_ms_to_prescale_and_step(struct led_data *data, uint32_t ms,
+-					   uint8_t *prescale, uint8_t *step_time)
+-{
+-	/*
+-	 * One step with the prescaler set to 0 takes 0.49ms. The max value for
+-	 * step_time is 63, so we just double the millisecond value. That way
+-	 * the step_time value never goes above the allowed 63.
+-	 */
+-	if (ms < 31) {
+-		*prescale = 0U;
+-		*step_time = ms << 1;
+-
+-		return;
+-	}
+-
+-	/*
+-	 * With a prescaler value set to 1 one step takes 15.6ms. So by dividing
+-	 * through 16 we get a decent enough result with low effort.
+-	 */
+-	*prescale = 1U;
+-	*step_time = ms >> 4;
+-
+-	return;
+-}
+-
+-/*
+- * @brief Assign a source to the given LED channel.
+- *
+- * @param dev     LP5562 device.
+- * @param channel LED channel the source is assigned to.
+- * @param source  Source for the channel.
+- *
+- * @retval 0    On success.
+- * @retval -EIO If the underlying I2C call fails.
+- */
+-static int lp5562_set_led_source(const struct device *dev,
+-				 enum lp5562_led_channels channel,
+-				 enum lp5562_led_sources source)
+-{
+-	const struct lp5562_config *config = dev->config;
+-
+-	if (i2c_reg_update_byte_dt(&config->bus, LP5562_LED_MAP,
+-				   LP5562_CHANNEL_MASK(channel),
+-				   source << (channel << 1))) {
+-		LOG_ERR("LED reg update failed.");
+-		return -EIO;
+-	}
+-
+-	return 0;
+-}
+-
+-/*
+- * @brief Get the assigned source of the given LED channel.
+- *
+- * @param dev     LP5562 device.
+- * @param channel Requested LED channel.
+- * @param source  Pointer to the source of the channel.
+- *
+- * @retval 0    On success.
+- * @retval -EIO If the underlying I2C call fails.
+- */
+-static int lp5562_get_led_source(const struct device *dev,
+-				 enum lp5562_led_channels channel,
+-				 enum lp5562_led_sources *source)
+-{
+-	const struct lp5562_config *config = dev->config;
+-	uint8_t led_map;
+-
+-	if (i2c_reg_read_byte_dt(&config->bus, LP5562_LED_MAP, &led_map)) {
+-		return -EIO;
+-	}
+-
+-	*source = (led_map >> (channel << 1)) & LP5562_MASK;
+-
+-	return 0;
+-}
+-
+-/*
+- * @brief Request whether an engine is currently running.
+- *
+- * @param dev    LP5562 device.
+- * @param engine Engine to check.
+- *
+- * @return Indication of the engine execution state.
+- *
+- * @retval true  If the engine is currently running.
+- * @retval false If the engine is not running or an error occurred.
+- */
+-static bool lp5562_is_engine_executing(const struct device *dev,
+-				       enum lp5562_led_sources engine)
+-{
+-	const struct lp5562_config *config = dev->config;
+-	uint8_t enabled, shift;
+-	int ret;
+-
+-	ret = lp5562_get_engine_reg_shift(engine, &shift);
+-	if (ret) {
+-		return false;
+-	}
+-
+-	if (i2c_reg_read_byte_dt(&config->bus, LP5562_ENABLE, &enabled)) {
+-		LOG_ERR("Failed to read ENABLE register.");
+-		return false;
+-	}
+-
+-	enabled = (enabled >> shift) & LP5562_MASK;
+-
+-	if (enabled == LP5562_ENGINE_MODE_RUN) {
+-		return true;
+-	}
+-
+-	return false;
+-}
+-
+-/*
+- * @brief Get an available execution engine that is currently unused.
+- *
+- * @param dev    LP5562 device.
+- * @param engine Pointer to the engine ID.
+- *
+- * @retval 0       On success.
+- * @retval -ENODEV If all engines are busy.
+- */
+-static int lp5562_get_available_engine(const struct device *dev,
+-				       enum lp5562_led_sources *engine)
+-{
+-	enum lp5562_led_sources src;
+-
+-	for (src = LP5562_SOURCE_ENGINE_1; src < LP5562_SOURCE_COUNT; src++) {
+-		if (!lp5562_is_engine_executing(dev, src)) {
+-			LOG_DBG("Available engine: %d", src);
+-			*engine = src;
+-			return 0;
+-		}
+-	}
+-
+-	LOG_ERR("No unused engine available");
+-
+-	return -ENODEV;
+-}
+-
+-/*
+- * @brief Set an register shifted for the given execution engine.
+- *
+- * @param dev    LP5562 device.
+- * @param engine Engine the value is shifted for.
+- * @param reg    Register address to set.
+- * @param val    Value to set.
+- *
+- * @retval 0    On success.
+- * @retval -EIO If the underlying I2C call fails.
+- */
+-static int lp5562_set_engine_reg(const struct device *dev,
+-				 enum lp5562_led_sources engine,
+-				 uint8_t reg, uint8_t val)
+-{
+-	const struct lp5562_config *config = dev->config;
+-	uint8_t shift;
+-	int ret;
+-
+-	ret = lp5562_get_engine_reg_shift(engine, &shift);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-	if (i2c_reg_update_byte_dt(&config->bus, reg, LP5562_MASK << shift,
+-				   val << shift)) {
+-		return -EIO;
+-	}
+-
+-	return 0;
+-}
+-
+-/*
+- * @brief Set the operational mode of the given engine.
+- *
+- * @param dev    LP5562 device.
+- * @param engine Engine the operational mode is changed for.
+- * @param mode   Mode to set.
+- *
+- * @retval 0    On success.
+- * @retval -EIO If the underlying I2C call fails.
+- */
+-static inline int lp5562_set_engine_op_mode(const struct device *dev,
+-					    enum lp5562_led_sources engine,
+-					    enum lp5562_engine_op_modes mode)
+-{
+-	return lp5562_set_engine_reg(dev, engine, LP5562_OP_MODE, mode);
+-}
+-
+-/*
+- * @brief Set the execution state of the given engine.
+- *
+- * @param dev    LP5562 device.
+- * @param engine Engine the execution state is changed for.
+- * @param state  State to set.
+- *
+- * @retval 0    On success.
+- * @retval -EIO If the underlying I2C call fails.
+- */
+-static inline int lp5562_set_engine_exec_state(const struct device *dev,
+-					       enum lp5562_led_sources engine,
+-					       enum lp5562_engine_exec_states state)
+-{
+-	int ret;
+-
+-	ret = lp5562_set_engine_reg(dev, engine, LP5562_ENABLE, state);
+-
+-	/*
+-	 * Delay between consecutive I2C writes to
+-	 * ENABLE register (00h) need to be longer than 488μs (typ.).
+-	 */
+-	k_sleep(K_MSEC(1));
+-
+-	return ret;
+-}
+-
+-/*
+- * @brief Start the execution of the program of the given engine.
+- *
+- * @param dev    LP5562 device.
+- * @param engine Engine that is started.
+- *
+- * @retval 0    On success.
+- * @retval -EIO If the underlying I2C call fails.
+- */
+-static inline int lp5562_start_program_exec(const struct device *dev,
+-					    enum lp5562_led_sources engine)
+-{
+-	if (lp5562_set_engine_op_mode(dev, engine, LP5562_OP_MODE_RUN)) {
+-		return -EIO;
+-	}
+-
+-	return lp5562_set_engine_exec_state(dev, engine,
+-					    LP5562_ENGINE_MODE_RUN);
+-}
+-
+-/*
+- * @brief Stop the execution of the program of the given engine.
+- *
+- * @param dev    LP5562 device.
+- * @param engine Engine that is stopped.
+- *
+- * @retval 0    On success.
+- * @retval -EIO If the underlying I2C call fails.
+- */
+-static inline int lp5562_stop_program_exec(const struct device *dev,
+-					   enum lp5562_led_sources engine)
+-{
+-	if (lp5562_set_engine_op_mode(dev, engine, LP5562_OP_MODE_DISABLED)) {
+-		return -EIO;
+-	}
+-
+-	return lp5562_set_engine_exec_state(dev, engine,
+-					    LP5562_ENGINE_MODE_HOLD);
+-}
+-
+-/*
+- * @brief Program a command to the memory of the given execution engine.
+- *
+- * @param dev           LP5562 device.
+- * @param engine        Engine that is programmed.
+- * @param command_index Index of the command that is programmed.
+- * @param command_msb   Most significant byte of the command.
+- * @param command_lsb   Least significant byte of the command.
+- *
+- * @retval 0       On success.
+- * @retval -EINVAL If the given command index is out of range or an invalid
+- *		   engine is passed.
+- * @retval -EIO    If the underlying I2C call fails.
+- */
+-static int lp5562_program_command(const struct device *dev,
+-				  enum lp5562_led_sources engine,
+-				  uint8_t command_index,
+-				  uint8_t command_msb,
+-				  uint8_t command_lsb)
+-{
+-	const struct lp5562_config *config = dev->config;
+-	uint8_t prog_base_addr;
+-	int ret;
+-
+-	if (command_index >= LP5562_PROG_MAX_COMMANDS) {
+-		return -EINVAL;
+-	}
+-
+-	ret = lp5562_get_engine_ram_base_addr(engine, &prog_base_addr);
+-	if (ret) {
+-		LOG_ERR("Failed to get base RAM address.");
+-		return ret;
+-	}
+-
+-	if (i2c_reg_write_byte_dt(&config->bus,
+-				  prog_base_addr + (command_index << 1),
+-				  command_msb)) {
+-		LOG_ERR("Failed to update LED.");
+-		return -EIO;
+-	}
+-
+-	if (i2c_reg_write_byte_dt(&config->bus,
+-				  prog_base_addr + (command_index << 1) + 1,
+-				  command_lsb)) {
+-		LOG_ERR("Failed to update LED.");
+-		return -EIO;
+-	}
+-
+-	return 0;
+-}
+-
+-/*
+- * @brief Program a command to set a fixed brightness to the given engine.
+- *
+- * @param dev           LP5562 device.
+- * @param engine        Engine to be programmed.
+- * @param command_index Index of the command in the program sequence.
+- * @param brightness    Brightness to be set for the LED in percent.
+- *
+- * @retval 0       On success.
+- * @retval -EINVAL If the passed arguments are invalid or out of range.
+- * @retval -EIO    If the underlying I2C call fails.
+- */
+-static int lp5562_program_set_brightness(const struct device *dev,
+-					 enum lp5562_led_sources engine,
+-					 uint8_t command_index,
+-					 uint8_t brightness)
+-{
+-	struct lp5562_data *data = dev->data;
+-	struct led_data *dev_data = &data->dev_data;
+-	uint8_t val;
+-
+-	if ((brightness < dev_data->min_brightness) ||
+-			(brightness > dev_data->max_brightness)) {
+-		return -EINVAL;
+-	}
+-
+-	val = (brightness * 0xFF) / dev_data->max_brightness;
+-
+-	return lp5562_program_command(dev, engine, command_index,
+-			LP5562_PROG_COMMAND_SET_PWM, val);
+-}
+-
+-/*
+- * @brief Program a command to ramp the brightness over time.
+- *
+- * In each step the PWM value is increased or decreased by 1/255th until the
+- * maximum or minimum value is reached or step_count steps have been done.
+- *
+- * @param dev           LP5562 device.
+- * @param engine        Engine to be programmed.
+- * @param command_index Index of the command in the program sequence.
+- * @param time_per_step Time each step takes in milliseconds.
+- * @param step_count    Number of steps to perform.
+- * @param fade_dir      Direction of the ramp (in-/decrease brightness).
+- *
+- * @retval 0       On success.
+- * @retval -EINVAL If the passed arguments are invalid or out of range.
+- * @retval -EIO    If the underlying I2C call fails.
+- */
+-static int lp5562_program_ramp(const struct device *dev,
+-			       enum lp5562_led_sources engine,
+-			       uint8_t command_index,
+-			       uint32_t time_per_step,
+-			       uint8_t step_count,
+-			       enum lp5562_engine_fade_dirs fade_dir)
+-{
+-	struct lp5562_data *data = dev->data;
+-	struct led_data *dev_data = &data->dev_data;
+-	uint8_t prescale, step_time;
+-
+-	if ((time_per_step < dev_data->min_period) ||
+-			(time_per_step > dev_data->max_period)) {
+-		return -EINVAL;
+-	}
+-
+-	lp5562_ms_to_prescale_and_step(dev_data, time_per_step,
+-			&prescale, &step_time);
+-
+-	return lp5562_program_command(dev, engine, command_index,
+-			LP5562_PROG_COMMAND_RAMP_TIME(prescale, step_time),
+-			LP5562_PROG_COMMAND_STEP_COUNT(fade_dir, step_count));
+-}
+-
+-/*
+- * @brief Program a command to do nothing for the given time.
+- *
+- * @param dev           LP5562 device.
+- * @param engine        Engine to be programmed.
+- * @param command_index Index of the command in the program sequence.
+- * @param time          Time to do nothing in milliseconds.
+- *
+- * @retval 0       On success.
+- * @retval -EINVAL If the passed arguments are invalid or out of range.
+- * @retval -EIO    If the underlying I2C call fails.
+- */
+-static inline int lp5562_program_wait(const struct device *dev,
+-				      enum lp5562_led_sources engine,
+-				      uint8_t command_index,
+-				      uint32_t time)
+-{
+-	/*
+-	 * A wait command is a ramp with the step_count set to 0. The fading
+-	 * direction does not matter in this case.
+-	 */
+-	return lp5562_program_ramp(dev, engine, command_index,
+-			time, 0, LP5562_FADE_UP);
+-}
+-
+-/*
+- * @brief Program a command to go back to the beginning of the program.
+- *
+- * Can be used at the end of a program to loop it infinitely.
+- *
+- * @param dev           LP5562 device.
+- * @param engine        Engine to be programmed.
+- * @param command_index Index of the command in the program sequence.
+- *
+- * @retval 0       On success.
+- * @retval -EINVAL If the given command index is out of range or an invalid
+- *		   engine is passed.
+- * @retval -EIO    If the underlying I2C call fails.
+- */
+-static inline int lp5562_program_go_to_start(const struct device *dev,
+-					     enum lp5562_led_sources engine,
+-					     uint8_t command_index)
+-{
+-	return lp5562_program_command(dev, engine, command_index, 0x00, 0x00);
+-}
+-
+-/*
+- * @brief Change the brightness of a running blink program.
+- *
+- * We know that the current program executes a blinking pattern
+- * consisting of following commands:
+- *
+- * - set_brightness high
+- * - wait on_delay
+- * - set_brightness low
+- * - wait off_delay
+- * - return to start
+- *
+- * In order to change the brightness during blinking, we overwrite only
+- * the first command and start execution again.
+- *
+- * @param dev           LP5562 device.
+- * @param engine        Engine running the blinking program.
+- * @param brightness_on New brightness value.
+- *
+- * @retval 0       On Success.
+- * @retval -EINVAL If the engine ID or brightness is out of range.
+- * @retval -EIO    If the underlying I2C call fails.
+- */
+-static int lp5562_update_blinking_brightness(const struct device *dev,
+-					     enum lp5562_led_sources engine,
+-					     uint8_t brightness_on)
+-{
+-	int ret;
+-
+-	ret = lp5562_stop_program_exec(dev, engine);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-	ret = lp5562_set_engine_op_mode(dev, engine, LP5562_OP_MODE_LOAD);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-
+-	ret = lp5562_program_set_brightness(dev, engine, 0, brightness_on);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-	ret = lp5562_start_program_exec(dev, engine);
+-	if (ret) {
+-		LOG_ERR("Failed to execute program.");
+-		return ret;
+-	}
+-
+-	return 0;
+-}
+-
+-static int lp5562_led_blink(const struct device *dev, uint32_t led,
+-			    uint32_t delay_on, uint32_t delay_off)
+-{
+-	struct lp5562_data *data = dev->data;
+-	struct led_data *dev_data = &data->dev_data;
+-	int ret;
+-	enum lp5562_led_sources engine;
+-	uint8_t command_index = 0U;
+-
+-	ret = lp5562_get_available_engine(dev, &engine);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-	ret = lp5562_set_led_source(dev, led, engine);
+-	if (ret) {
+-		LOG_ERR("Failed to set LED source.");
+-		return ret;
+-	}
+-
+-	ret = lp5562_set_engine_op_mode(dev, engine, LP5562_OP_MODE_LOAD);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-	ret = lp5562_program_set_brightness(dev, engine, command_index,
+-			dev_data->max_brightness);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-	ret = lp5562_program_wait(dev, engine, ++command_index, delay_on);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-	ret = lp5562_program_set_brightness(dev, engine, ++command_index,
+-			dev_data->min_brightness);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-	ret = lp5562_program_wait(dev, engine, ++command_index, delay_off);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-	ret = lp5562_program_go_to_start(dev, engine, ++command_index);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-	ret = lp5562_start_program_exec(dev, engine);
+-	if (ret) {
+-		LOG_ERR("Failed to execute program.");
+-		return ret;
+-	}
+-
+-	return 0;
+-}
+-
+-static int lp5562_led_set_brightness(const struct device *dev, uint32_t led,
+-				     uint8_t value)
+-{
+-	const struct lp5562_config *config = dev->config;
+-	struct lp5562_data *data = dev->data;
+-	struct led_data *dev_data = &data->dev_data;
+-	int ret;
+-	uint8_t val, reg;
+-	enum lp5562_led_sources current_source;
+-
+-	if ((value < dev_data->min_brightness) ||
+-			(value > dev_data->max_brightness)) {
+-		return -EINVAL;
+-	}
+-
+-	ret = lp5562_get_led_source(dev, led, &current_source);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-	if (current_source != LP5562_SOURCE_PWM) {
+-		if (lp5562_is_engine_executing(dev, current_source)) {
+-			/*
+-			 * LED is blinking currently. Restart the blinking with
+-			 * the passed brightness.
+-			 */
+-			return lp5562_update_blinking_brightness(dev,
+-					current_source, value);
+-		}
+-
+-		ret = lp5562_set_led_source(dev, led, LP5562_SOURCE_PWM);
+-		if (ret) {
+-			return ret;
+-		}
+-	}
+-
+-	val = (value * 0xFF) / dev_data->max_brightness;
+-
+-	ret = lp5562_get_pwm_reg(led, &reg);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-	if (i2c_reg_write_byte_dt(&config->bus, reg, val)) {
+-		LOG_ERR("LED write failed");
+-		return -EIO;
+-	}
+-
+-	return 0;
+-}
+-
+-static inline int lp5562_led_on(const struct device *dev, uint32_t led)
+-{
+-	struct lp5562_data *data = dev->data;
+-	struct led_data *dev_data = &data->dev_data;
+-
+-	return lp5562_led_set_brightness(dev, led, dev_data->max_brightness);
+-}
+-
+-static inline int lp5562_led_off(const struct device *dev, uint32_t led)
+-{
+-	struct lp5562_data *data = dev->data;
+-	struct led_data *dev_data = &data->dev_data;
+-
+-	int ret;
+-	enum lp5562_led_sources current_source;
+-
+-	ret = lp5562_get_led_source(dev, led, &current_source);
+-	if (ret) {
+-		return ret;
+-	}
+-
+-	if (current_source != LP5562_SOURCE_PWM) {
+-		ret = lp5562_stop_program_exec(dev, current_source);
+-		if (ret) {
+-			return ret;
+-		}
+-	}
+-
+-	return lp5562_led_set_brightness(dev, led, dev_data->min_brightness);
+-}
+-
+-static int lp5562_led_update_current(const struct device *dev)
+-{
+-	const struct lp5562_config *config = dev->config;
+-	int ret;
+-	uint8_t tx_buf[4] = {
+-		LP5562_B_CURRENT,
+-		config->b_current,
+-		config->g_current,
+-		config->r_current };
+-
+-	ret = i2c_write_dt(&config->bus, tx_buf, sizeof(tx_buf));
+-	if (ret == 0) {
+-		ret = i2c_reg_write_byte_dt(&config->bus, LP5562_W_CURRENT, config->w_current);
+-	}
+-
+-	return ret;
+-}
+-
+-static int lp5562_led_init(const struct device *dev)
+-{
+-	const struct lp5562_config *config = dev->config;
+-	struct lp5562_data *data = dev->data;
+-	struct led_data *dev_data = &data->dev_data;
+-	int ret;
+-
+-	if (!device_is_ready(config->bus.bus)) {
+-		LOG_ERR("I2C device not ready");
+-		return -ENODEV;
+-	}
+-
+-	/* Hardware specific limits */
+-	dev_data->min_period = LP5562_MIN_BLINK_PERIOD;
+-	dev_data->max_period = LP5562_MAX_BLINK_PERIOD;
+-	dev_data->min_brightness = LP5562_MIN_BRIGHTNESS;
+-	dev_data->max_brightness = LP5562_MAX_BRIGHTNESS;
+-
+-	ret = lp5562_led_update_current(dev);
+-	if (ret) {
+-		LOG_ERR("Setting current setting LP5562 LED chip failed.");
+-		return ret;
+-	}
+-
+-	if (i2c_reg_write_byte_dt(&config->bus, LP5562_ENABLE,
+-				  LP5562_ENABLE_CHIP_EN)) {
+-		LOG_ERR("Enabling LP5562 LED chip failed.");
+-		return -EIO;
+-	}
+-
+-	if (i2c_reg_write_byte_dt(&config->bus, LP5562_CONFIG,
+-				  (LP5562_CONFIG_INTERNAL_CLOCK |
+-				   LP5562_CONFIG_PWRSAVE_EN))) {
+-		LOG_ERR("Configuring LP5562 LED chip failed.");
+-		return -EIO;
+-	}
+-
+-	if (i2c_reg_write_byte_dt(&config->bus, LP5562_OP_MODE, 0x00)) {
+-		LOG_ERR("Disabling all engines failed.");
+-		return -EIO;
+-	}
+-
+-	if (i2c_reg_write_byte_dt(&config->bus, LP5562_LED_MAP, 0x00)) {
+-		LOG_ERR("Setting all LEDs to manual control failed.");
+-		return -EIO;
+-	}
+-
+-	return 0;
+-}
+-
+-static const struct led_driver_api lp5562_led_api = {
+-	.blink = lp5562_led_blink,
+-	.set_brightness = lp5562_led_set_brightness,
+-	.on = lp5562_led_on,
+-	.off = lp5562_led_off,
+-};
+-
+-#define LP5562_DEFINE(id)						\
+-	BUILD_ASSERT(DT_INST_PROP(id, red_output_current) <= LP5562_MAX_CURRENT_SETTING,\
+-		"Red channel current must be between 0 and 25.5 mA.");	\
+-	BUILD_ASSERT(DT_INST_PROP(id, green_output_current) <= LP5562_MAX_CURRENT_SETTING,\
+-		"Green channel current must be between 0 and 25.5 mA.");	\
+-	BUILD_ASSERT(DT_INST_PROP(id, blue_output_current) <= LP5562_MAX_CURRENT_SETTING,\
+-		"Blue channel current must be between 0 and 25.5 mA.");	\
+-	BUILD_ASSERT(DT_INST_PROP(id, white_output_current) <= LP5562_MAX_CURRENT_SETTING,\
+-		"White channel current must be between 0 and 25.5 mA.");	\
+-	static const struct lp5562_config lp5562_config_##id = {	\
+-		.bus = I2C_DT_SPEC_INST_GET(id),			\
+-		.r_current = DT_INST_PROP(id, red_output_current),	\
+-		.g_current = DT_INST_PROP(id, green_output_current),	\
+-		.b_current = DT_INST_PROP(id, blue_output_current),	\
+-		.w_current = DT_INST_PROP(id, white_output_current),	\
+-	};								\
+-									\
+-	struct lp5562_data lp5562_data_##id;				\
+-	DEVICE_DT_INST_DEFINE(id, &lp5562_led_init, NULL,		\
+-			&lp5562_data_##id,				\
+-			&lp5562_config_##id, POST_KERNEL,		\
+-			CONFIG_LED_INIT_PRIORITY,			\
+-			&lp5562_led_api);				\
+-
+-DT_INST_FOREACH_STATUS_OKAY(LP5562_DEFINE)
+diff --git a/drivers/led/lp55xx.c b/drivers/led/lp55xx.c
+new file mode 100644
+index 00000000000..1004478ae62
+--- /dev/null
++++ b/drivers/led/lp55xx.c
+@@ -0,0 +1,794 @@
++/**
++ * @file
++ * @brief LP55XX LED driver
++ *
++ * The LP55XX is a 4-channel LED driver that communicates over I2C. The four
++ * channels are expected to be connected to a red, green, blue and white LED.
++ * Each LED can be driven by two different sources.
++ *
++ * 1. The brightness of each LED can be configured directly by setting a
++ * register that drives the PWM of the connected LED.
++ *
++ * 2. A program can be transferred to the driver and run by one of the three
++ * available execution engines. Up to 16 commands can be defined in each
++ * program. Possible commands are:
++ *	- Set the brightness.
++ *	- Fade the brightness over time.
++ *	- Loop parts of the program or the whole program.
++ *	- Add delays.
++ *	- Synchronize between the engines.
++ *
++ * After the program has been transferred, it can run infinitely without
++ * communication between the host MCU and the driver.
++ */
++
++#include <zephyr/drivers/i2c.h>
++#include <zephyr/drivers/led.h>
++#include <zephyr/drivers/gpio.h>
++#include <zephyr/device.h>
++#include <zephyr/pm/device.h>
++#include <zephyr/kernel.h>
++#include <zephyr/dt-bindings/led/led.h>
++
++#define LOG_LEVEL CONFIG_LED_LOG_LEVEL
++#include <zephyr/logging/log.h>
++LOG_MODULE_REGISTER(lp55xx);
++
++#include "led_context.h"
++
++/* Common Registers */
++#define LP55XX_ENABLE		0x00
++#define LP55XX_OP_MODE		0x01
++#define LP55XX_RGB_PWM_BASE	0x02
++#define LP55XX_RGB_CURRENT_BASE 0x05
++#define LP55XX_CONFIG		0x08
++#define LP55XX_RESET		0x0D
++/* Program memory definitions */
++#define LP55XX_PROG_MEM_END	 0x50
++#define LP55XX_PROG_MEM_SIZE	 0x20
++#define LP55XX_PROG_MAX_COMMANDS 16
++
++/* Program memory helper function */
++#define LP55XX_ENG_PROG_ADDR(eng) (LP55XX_PROG_MEM_END - ((eng) * LP55XX_PROG_MEM_SIZE))
++/* Engine control bit definitions and helper macro */
++#define LP55XX_ENG_BIT_MASK		0x03
++#define LP55XX_ENG_SHIFT(eng)		((eng) << 1)
++#define LP55XX_ENG_CTRL_VALUE(eng, val) ((val) << LP55XX_ENG_SHIFT(eng))
++#define LP55XX_ENG_CTRL_MASK(eng)	LP55XX_ENG_CTRL_VALUE((eng), LP55XX_ENG_BIT_MASK)
++
++#define LP5562_LED_MAP	 0x70
++#define LP5562_W_PWM	 0x0E
++#define LP5562_W_CURRENT 0x0F
++
++/* Values for ENABLE register. */
++#define LP55XX_ENABLE_CHIP_EN_BIT  6
++#define LP55XX_ENABLE_CHIP_EN_MASK (1 << LP55XX_ENABLE_CHIP_EN_BIT)
++#define LP55XX_ENABLE_CHIP_EN_SET  (1 << LP55XX_ENABLE_CHIP_EN_BIT)
++#define LP55XX_ENABLE_CHIP_EN_CLR  (0 << LP55XX_ENABLE_CHIP_EN_BIT)
++#define LP55XX_ENABLE_LOG_EN_BIT   7
++#define LP55XX_ENABLE_LOG_EN_MASK  (1 << LP55XX_ENABLE_LOG_EN_BIT)
++#define LP55XX_ENABLE_LOG_EN_SET   (1 << LP55XX_ENABLE_LOG_EN_BIT)
++#define LP55XX_ENABLE_LOG_EN_CLR   (0 << LP55XX_ENABLE_LOG_EN_BIT)
++
++/* Values for CONFIG register. */
++#define LP55XX_CONFIG_EXTERNAL_CLOCK	     0x00
++#define LP55XX_CONFIG_INTERNAL_CLOCK	     0x01
++#define LP55XX_CONFIG_CLOCK_AUTOMATIC_SELECT 0x02
++#define LP55XX_CONFIG_CLK_SEL(m)	     (((m) & 0x03) << 0)
++#define LP55XX_CONFIG_PWRSAVE_EN	     (1 << 5)
++/* Enable 558 Hz frequency for PWM. Default is 256. */
++#define LP55XX_CONFIG_PWM_HW_FREQ_558 (1 << 6)
++
++/* Helper definitions. */
++#define LP5521_CONFIG_R_TO_BATT_BIT 2
++#define LP5521_CONFIG_R_TO_BATT	    (1 << LP5521_CONFIG_R_TO_BATT_BIT)
++#define LP5521_CONFIG_CP_MODE(m)    (((m) & 0x03) << 3)
++
++#define LP5562_LED_MAP_TO_ENG(map, id) (((map) >> LP55XX_ENG_SHIFT(id)) & LP55XX_ENG_BIT_MASK)
++
++/*
++ * The wait command has six bits for the number of steps (max 63) with up to
++ * 15.6ms per step if the prescaler is set to 1. We round the step length
++ * however to 16ms for easier handling, so the maximum blinking period is
++ * therefore (16 * 63) = 1008ms. We round it down to 1000ms to be on the safe
++ * side.
++ */
++#define LP55XX_MAX_BLINK_PERIOD 1000
++/*
++ * The minimum waiting period is 0.49ms with the prescaler set to 0 and one
++ * step. We round up to a full millisecond.
++ */
++#define LP55XX_MIN_BLINK_PERIOD 1
++
++/* Brightness limits in percent */
++#define LP55XX_MIN_BRIGHTNESS 0
++#define LP55XX_MAX_BRIGHTNESS 100
++
++/* Output current limits in 0.1 mA */
++#define LP55XX_MIN_CURRENT_SETTING 0
++#define LP55XX_MAX_CURRENT_SETTING 255
++
++/* Values for execution engine programs. */
++#define LP55XX_PROG_COMMAND_SET_PWM(pwm) {(1 << 6), (pwm)}
++/*
++ * One step with the prescaler set to 0 takes 0.49ms. The max value for
++ * step_time is 63, so we just double the millisecond value. That way
++ * the step_time value never goes above the allowed 63.
++ *
++ * With a prescaler value set to 1 one step takes 15.6ms. So by dividing
++ * through 16 we get a decent enough result with low effort.
++ */
++#define LP55XX_PROG_COMMAND_WAIT(delay) \
++	{(((delay) < 31) ? ((delay) << 1) : (0x40 | ((delay) >> 4))), 0x00}
++
++#define LP55XX_PROG_COMMAND_GO_TO_START() {0, 0}
++
++/* Operational modes of the execution engines. */
++enum lp55xx_engine_op_modes {
++	LP55XX_OP_MODE_DISABLED = 0x00,
++	LP55XX_OP_MODE_LOAD = 0x01,
++	LP55XX_OP_MODE_RUN = 0x02,
++	LP55XX_OP_MODE_DIRECT_CTRL = 0x03,
++};
++
++/* Execution state of the engines. */
++enum lp55xx_engine_exec_states {
++	LP55XX_ENGINE_MODE_HOLD = 0x00,
++	LP55XX_ENGINE_MODE_STEP = 0x01,
++	LP55XX_ENGINE_MODE_RUN = 0x02,
++	LP55XX_ENGINE_MODE_EXEC = 0x03,
++};
++
++enum lp55xx_chip_id {
++	LP55XX_CHIP_ID_5521,
++	LP55XX_CHIP_ID_5562,
++	LP55XX_CHIP_ID_MAX,
++};
++
++enum lp55xx_led_mode {
++	LP55XX_MODE_PWM,
++	LP55XX_MODE_ENG,
++};
++
++static inline int lp55xx_set_engine_op_mode(const struct i2c_dt_spec *bus, uint8_t eng_id,
++					    enum lp55xx_engine_op_modes op_mode)
++{
++	int ret = i2c_reg_update_byte_dt(bus, LP55XX_OP_MODE, LP55XX_ENG_CTRL_MASK(eng_id),
++					 LP55XX_ENG_CTRL_VALUE(eng_id, op_mode));
++	if (ret == 0) {
++		/* Must wait for next i2c write on OP_MODE reg */
++		k_msleep(1);
++	}
++	return ret;
++}
++
++static inline int lp55xx_get_engine_op_mode(const struct i2c_dt_spec *bus, uint8_t eng_id,
++					    enum lp55xx_engine_op_modes *op_mode)
++{
++	int err = i2c_reg_read_byte_dt(bus, LP55XX_OP_MODE, op_mode);
++	if (err == 0) {
++		(*op_mode) &= LP55XX_ENG_CTRL_MASK(eng_id);
++		(*op_mode) >>= LP55XX_ENG_SHIFT(eng_id);
++	}
++	return err;
++}
++
++static inline int lp55xx_set_engine_exec_state(const struct i2c_dt_spec *bus, uint8_t eng_id,
++					       enum lp55xx_engine_exec_states state)
++{
++	int ret = i2c_reg_update_byte_dt(bus, LP55XX_ENABLE, LP55XX_ENG_CTRL_MASK(eng_id),
++					 LP55XX_ENG_CTRL_VALUE(eng_id, state));
++	if (ret == 0) {
++		/*
++		 * Delay between consecutive I2C writes to
++		 * ENABLE register (00h) need to be longer than 488μs (typ.).
++		 */
++		k_msleep(1);
++	}
++	return ret;
++}
++
++static inline int lp55xx_get_engine_exec_state(const struct i2c_dt_spec *bus, uint8_t eng_id,
++					       enum lp55xx_engine_exec_states *state)
++{
++	int err = i2c_reg_read_byte_dt(bus, LP55XX_OP_MODE, state);
++	if (err == 0) {
++		(*state) &= LP55XX_ENG_CTRL_MASK(eng_id);
++		(*state) >>= LP55XX_ENG_SHIFT(eng_id);
++	}
++	return err;
++}
++
++int lp5521_set_led_mode(const struct i2c_dt_spec *bus, uint8_t color, enum lp55xx_led_mode mode,
++			uint8_t *eng_id)
++{
++	int err = -ENOTSUP;
++	if ((color < LED_COLOR_ID_RED) || (color > LED_COLOR_ID_BLUE)) {
++		return -ENOTSUP;
++	}
++	/* color to eng mapping is simple 1 to 1 */
++	*eng_id = (LED_COLOR_ID_BLUE - color);
++
++	switch (mode) {
++	case LP55XX_MODE_PWM: {
++		err = lp55xx_set_engine_op_mode(bus, *eng_id, LP55XX_OP_MODE_DIRECT_CTRL);
++	} break;
++	case LP55XX_MODE_ENG: {
++		/* put eng state to run, because we can get here through blink api
++		 * and after flashing program it will auto restart
++		 */
++		err = lp55xx_set_engine_exec_state(bus, *eng_id, LP55XX_ENGINE_MODE_RUN);
++		if (err == 0) {
++			err = lp55xx_set_engine_op_mode(bus, *eng_id, LP55XX_OP_MODE_RUN);
++		}
++	} break;
++	}
++	return err;
++}
++
++int lp5521_get_led_mode(const struct i2c_dt_spec *bus, uint8_t color, enum lp55xx_led_mode *mode,
++			uint8_t *eng_id)
++{
++	int err;
++	enum lp55xx_engine_op_modes op_mode;
++	enum lp55xx_engine_exec_states state;
++
++	if ((color < LED_COLOR_ID_RED) || (color > LED_COLOR_ID_BLUE)) {
++		return -ENOTSUP;
++	}
++	/* color to eng mapping is simple 1 to 1 */
++	*eng_id = (LED_COLOR_ID_BLUE - color);
++
++	err = lp55xx_get_engine_op_mode(bus, *eng_id, &op_mode);
++	if (err) {
++		return err;
++	}
++	if (op_mode == LP55XX_OP_MODE_DIRECT_CTRL) {
++		*mode = LP55XX_MODE_PWM;
++	} else {
++		err = lp55xx_get_engine_exec_state(bus, *eng_id, &state);
++		if ((op_mode == LP55XX_OP_MODE_RUN) && (state == LP55XX_ENGINE_MODE_RUN)) {
++			*mode = LP55XX_MODE_ENG;
++		} else {
++			*mode = LP55XX_MODE_PWM;
++			err = lp5521_set_led_mode(bus, color, *mode, eng_id);
++		}
++	}
++	return err;
++}
++
++static int lp5562_find_free_engine(uint8_t led_map, uint8_t *eng_id)
++{
++	uint8_t eng_link_mask = 0;
++	uint8_t tmp_eng_id;
++	/* prepare a link map */
++	for (int led_id = 0; led_id < 4; led_id++) {
++		tmp_eng_id = LP5562_LED_MAP_TO_ENG(led_map, led_id);
++		if (tmp_eng_id) {
++			eng_link_mask |= BIT(tmp_eng_id - 1);
++		}
++	}
++	/* identify first engine that is not linked*/
++	for (tmp_eng_id = 0; tmp_eng_id < 3; tmp_eng_id++) {
++		if ((eng_link_mask & BIT(tmp_eng_id)) == 0) {
++			*eng_id = tmp_eng_id;
++			return 0;
++		}
++	}
++	return -EOVERFLOW;
++}
++
++int lp5562_set_led_mode(const struct i2c_dt_spec *bus, uint8_t color, enum lp55xx_led_mode mode,
++			uint8_t *eng_id)
++{
++	uint8_t led_id = LED_COLOR_ID_BLUE - color;
++	uint8_t led_map;
++	int err;
++
++	if (color > LED_COLOR_ID_BLUE) {
++		return -ENOTSUP;
++	}
++
++	err = i2c_reg_read_byte_dt(bus, LP5562_LED_MAP, &led_map);
++	if (err) {
++		return err;
++	}
++
++	/* parse eng id value */
++	*eng_id = LP5562_LED_MAP_TO_ENG(led_map, led_id);
++	/* clear map, basically configure it in pwm mode */
++	led_map &= ~LP55XX_ENG_CTRL_MASK(led_id);
++	/* if need to put it in engine mode, identify free engine and configure it */
++	if (mode == LP55XX_MODE_ENG) {
++		/* if no engine is linked, identify a free engine and link it */
++		if (*eng_id == 0) {
++			/* identify free engine id */
++			err = lp5562_find_free_engine(led_map, eng_id);
++			if (err) {
++				return err;
++			}
++		}
++		/* link eng_id in led map*/
++		led_map |= LP55XX_ENG_CTRL_VALUE(led_id, *eng_id);
++		/* put eng state to run, because we can get here through blink api
++		 * and after flashing program it will auto restart
++		 */
++		err = lp55xx_set_engine_exec_state(bus, *eng_id, LP55XX_ENGINE_MODE_RUN);
++		if (err) {
++			return err;
++		}
++		err = lp55xx_set_engine_op_mode(bus, *eng_id, LP55XX_OP_MODE_RUN);
++		if (err) {
++			return err;
++		}
++	}
++	/* update led map */
++	return i2c_reg_write_byte_dt(bus, LP5562_LED_MAP, led_map);
++}
++
++int lp5562_get_led_mode(const struct i2c_dt_spec *bus, uint8_t color, enum lp55xx_led_mode *mode,
++			uint8_t *eng_id)
++{
++	uint8_t led_id = LED_COLOR_ID_BLUE - color;
++	uint8_t led_map;
++	enum lp55xx_engine_op_modes op_mode;
++	enum lp55xx_engine_exec_states state;
++	int err;
++
++	if (color > LED_COLOR_ID_BLUE) {
++		return -ENOTSUP;
++	}
++
++	err = i2c_reg_read_byte_dt(bus, LP5562_LED_MAP, &led_map);
++	if (err) {
++		return err;
++	}
++
++	/* parse eng id value */
++	*eng_id = LP5562_LED_MAP_TO_ENG(led_map, led_id);
++
++	if (*eng_id == 0) {
++		*mode = LP55XX_MODE_PWM;
++	} else {
++		(*eng_id)--;
++		err = lp55xx_get_engine_op_mode(bus, *eng_id, &op_mode);
++		if (err) {
++			return err;
++		}
++		err = lp55xx_get_engine_exec_state(bus, *eng_id, &state);
++		if (err) {
++			return err;
++		}
++		if ((op_mode == LP55XX_OP_MODE_RUN) && (state == LP55XX_ENGINE_MODE_RUN)) {
++			*mode = LP55XX_MODE_ENG;
++		} else {
++			*mode = LP55XX_MODE_PWM;
++			err = lp5562_set_led_mode(bus, color, *mode, eng_id);
++		}
++	}
++	return err;
++}
++
++typedef int (*set_led_mode_fn)(const struct i2c_dt_spec *bus, uint8_t color,
++			       enum lp55xx_led_mode mode, uint8_t *eng_id);
++
++typedef int (*get_led_mode_fn)(const struct i2c_dt_spec *bus, uint8_t color,
++			       enum lp55xx_led_mode *mode, uint8_t *eng_id);
++
++struct lp55xx_interface {
++	enum lp55xx_chip_id id;
++	uint8_t config_mask;
++	set_led_mode_fn set_mode;
++	get_led_mode_fn get_mode;
++	uint8_t wrgb_current_addr[4];
++	uint8_t wrgb_pwm_addr[4];
++};
++
++static const struct lp55xx_interface _lp55xx_ifaces[LP55XX_CHIP_ID_MAX] = {
++    /* lp5521 */
++    {
++	.id = LP55XX_CHIP_ID_5521,
++	.config_mask = 0x7F,
++	.set_mode = lp5521_set_led_mode,
++	.get_mode = lp5521_get_led_mode,
++	.wrgb_current_addr =
++	    {
++		0, /* not available on 5521 */
++		LP55XX_RGB_CURRENT_BASE,
++		LP55XX_RGB_CURRENT_BASE + 1,
++		LP55XX_RGB_CURRENT_BASE + 2,
++	    },
++	.wrgb_pwm_addr =
++	    {
++		0, /* not available on 5521 */
++		LP55XX_RGB_PWM_BASE,
++		LP55XX_RGB_PWM_BASE + 1,
++		LP55XX_RGB_PWM_BASE + 2,
++	    },
++    },
++    /* lp5562 */
++    {
++	.id = LP55XX_CHIP_ID_5562,
++	.config_mask = 0x63,
++	.set_mode = lp5562_set_led_mode,
++	.get_mode = lp5562_get_led_mode,
++	.wrgb_current_addr =
++	    {
++		LP5562_W_CURRENT,
++		LP55XX_RGB_CURRENT_BASE + 2,
++		LP55XX_RGB_CURRENT_BASE + 1,
++		LP55XX_RGB_CURRENT_BASE,
++	    },
++	.wrgb_pwm_addr =
++	    {
++		LP5562_W_PWM,
++		LP55XX_RGB_PWM_BASE + 2,
++		LP55XX_RGB_PWM_BASE + 1,
++		LP55XX_RGB_PWM_BASE,
++	    },
++    },
++};
++
++struct lp55xx_config {
++	/* Bus is first parameter to facilitate custom user APIs */
++	struct i2c_dt_spec bus;
++	const struct lp55xx_interface *iface;
++	uint8_t wrgb_current[4];
++	uint8_t clk_sel;
++	bool hf_pwm_dis;
++	bool power_save_dis;
++	bool active_low;
++	bool log_scale_en;
++	uint8_t charge_pump_mode;
++	bool red_charge_pump_bypass;
++	const struct gpio_dt_spec en_pin;
++};
++
++struct lp55xx_data {
++	struct led_data dev_data;
++};
++
++static int lp55xx_led_blink(const struct device *dev, uint32_t color, uint32_t delay_on,
++			    uint32_t delay_off)
++{
++	const struct lp55xx_config *config = dev->config;
++	const struct lp55xx_interface *iface = config->iface;
++	uint8_t eng_id;
++	int ret;
++
++	if ((delay_on > LP55XX_MAX_BLINK_PERIOD) || (delay_on < LP55XX_MIN_BLINK_PERIOD) ||
++	    (delay_off > LP55XX_MAX_BLINK_PERIOD) || (delay_off < LP55XX_MIN_BLINK_PERIOD)) {
++		return -EINVAL;
++	}
++
++	ret = iface->set_mode(&config->bus, color, LP55XX_MODE_ENG, &eng_id);
++	if (ret) {
++		return ret;
++	}
++
++	uint8_t program_code[5][2] = {
++	    /* */
++	    LP55XX_PROG_COMMAND_SET_PWM((config->active_low) ? 0 : 255),
++	    /* */
++	    LP55XX_PROG_COMMAND_WAIT(delay_on),
++	    /* */
++	    LP55XX_PROG_COMMAND_SET_PWM((config->active_low) ? 255 : 0),
++	    /* */
++	    LP55XX_PROG_COMMAND_WAIT(delay_off),
++	    /* */
++	    LP55XX_PROG_COMMAND_GO_TO_START(),
++	};
++
++	ret = lp55xx_set_engine_op_mode(&config->bus, eng_id, LP55XX_OP_MODE_LOAD);
++	if (ret) {
++		return ret;
++	}
++
++	ret = i2c_burst_write_dt(&config->bus, LP55XX_ENG_PROG_ADDR(eng_id), (uint8_t *)program_code,
++				 sizeof(program_code));
++	if (ret) {
++		return ret;
++	}
++
++	ret = lp55xx_set_engine_op_mode(&config->bus, eng_id, LP55XX_OP_MODE_RUN);
++	if (ret) {
++		return -EIO;
++	}
++
++	return 0;
++}
++
++static inline int lp55xx_set_pwm_ctrl_value(const struct device *dev, uint8_t color, uint8_t duty)
++{
++	const struct lp55xx_config *config = dev->config;
++	const struct lp55xx_interface *iface = config->iface;
++	uint8_t reg_val = (duty * 0xFF) / LP55XX_MAX_BRIGHTNESS;
++	int err;
++
++	if (iface->wrgb_pwm_addr[color] == 0) {
++		return -ENOTSUP;
++	}
++	if (config->active_low) {
++		reg_val = ~reg_val;
++	}
++	err = i2c_reg_write_byte_dt(&config->bus, iface->wrgb_pwm_addr[color], reg_val);
++	if (err) {
++		LOG_ERR("Reg[%x]=%x write err: %d", iface->wrgb_pwm_addr[color], reg_val, err);
++	}
++
++	return err;
++}
++
++static int lp55xx_set_pwm_eng_value(const struct device *dev, uint8_t color, uint8_t duty,
++				    uint8_t eng_id)
++{
++	const struct lp55xx_config *config = dev->config;
++	uint8_t reg_val = (duty * 0xFF) / LP55XX_MAX_BRIGHTNESS;
++	int ret;
++
++	uint8_t program_code[1][2] = {
++	    LP55XX_PROG_COMMAND_SET_PWM((config->active_low) ? ~reg_val : reg_val),
++	};
++
++	ret = lp55xx_set_engine_op_mode(&config->bus, eng_id, LP55XX_OP_MODE_LOAD);
++	if (ret) {
++		return ret;
++	}
++
++	ret = i2c_burst_write_dt(&config->bus, LP55XX_ENG_PROG_ADDR(eng_id), (uint8_t *)program_code,
++				 sizeof(program_code));
++	if (ret) {
++		return ret;
++	}
++
++	ret = lp55xx_set_engine_op_mode(&config->bus, eng_id, LP55XX_OP_MODE_RUN);
++	if (ret) {
++		return -EIO;
++	}
++	return ret;
++}
++
++static int lp55xx_led_set_brightness(const struct device *dev, uint32_t color, uint8_t value)
++{
++	const struct lp55xx_config *config = dev->config;
++	uint8_t eng_id;
++	enum lp55xx_led_mode mode;
++	int err;
++
++	if ((value < LP55XX_MIN_BRIGHTNESS) || (value > LP55XX_MAX_BRIGHTNESS)) {
++		return -EINVAL;
++	}
++
++	err = config->iface->get_mode(&config->bus, color, &mode, &eng_id);
++	if (err) {
++		return err;
++	}
++
++	if (mode == LP55XX_MODE_PWM) {
++		err = lp55xx_set_pwm_ctrl_value(dev, color, value);
++	} else {
++		err = lp55xx_set_pwm_eng_value(dev, color, value, eng_id);
++	}
++	return err;
++}
++
++static inline int lp55xx_led_on(const struct device *dev, uint32_t color)
++{
++	const struct lp55xx_config *config = dev->config;
++	uint8_t eng_id;
++
++	int ret = config->iface->set_mode(&config->bus, color, LP55XX_MODE_PWM, &eng_id);
++	if (ret) {
++		return ret;
++	}
++	return lp55xx_set_pwm_ctrl_value(dev, color, LP55XX_MAX_BRIGHTNESS);
++}
++
++static inline int lp55xx_led_off(const struct device *dev, uint32_t color)
++{
++	const struct lp55xx_config *config = dev->config;
++	uint8_t eng_id;
++
++	int ret = config->iface->set_mode(&config->bus, color, LP55XX_MODE_PWM, &eng_id);
++	if (ret) {
++		return ret;
++	}
++	return lp55xx_set_pwm_ctrl_value(dev, color, LP55XX_MIN_BRIGHTNESS);
++}
++
++static int lp55xx_led_update_current(const struct device *dev)
++{
++	const struct lp55xx_config *config = dev->config;
++	const struct lp55xx_interface *iface = config->iface;
++	const uint8_t *reg_addr = iface->wrgb_current_addr;
++	const uint8_t *reg_val = config->wrgb_current;
++	int err = 0;
++
++	for (int color = LED_COLOR_ID_WHITE; color <= LED_COLOR_ID_BLUE; color++) {
++		if (reg_addr[color] == 0) {
++			// skip if not supported
++			continue;
++		}
++		err = i2c_reg_write_byte_dt(&config->bus, reg_addr[color], reg_val[color]);
++		if (err) {
++			LOG_ERR("Reg[%x]=%x write err: %d", reg_addr[color], reg_val[color], err);
++			break;
++		}
++	}
++	return err;
++}
++
++static int lp55xx_enable(const struct device *dev)
++{
++	const struct lp55xx_config *config = dev->config;
++	const struct gpio_dt_spec *en_pin = &config->en_pin;
++	int err = 0;
++
++	/* if gpio control is enabled, we need to enable both
++	 * en_io and en bit in register configurations
++	 */
++	if ((en_pin->port != NULL) && (gpio_pin_get_dt(en_pin) != 1)) {
++		err = gpio_pin_set_dt(en_pin, 1);
++		if (err) {
++			LOG_ERR("en_gpio set low err: %d", err);
++			return err;
++		}
++		k_msleep(5);
++	}
++	err = i2c_reg_write_byte_dt(&config->bus, LP55XX_RESET, 0xFF);
++	if (err) {
++		return err;
++	}
++	k_msleep(1);
++
++	if (config->log_scale_en) {
++		err = i2c_reg_write_byte_dt(&config->bus, LP55XX_ENABLE,
++					    LP55XX_ENABLE_CHIP_EN_SET | LP55XX_ENABLE_LOG_EN_SET);
++	} else {
++		err = i2c_reg_write_byte_dt(&config->bus, LP55XX_ENABLE, LP55XX_ENABLE_CHIP_EN_SET);
++	}
++	if (err) {
++		return err;
++	}
++	k_msleep(1);
++	return err;
++}
++
++#ifdef CONFIG_PM_DEVICE
++static int lp55xx_disable(const struct device *dev)
++{
++	const struct lp55xx_config *config = dev->config;
++	const struct gpio_dt_spec *en_pin = &config->en_pin;
++	int err = 0;
++
++	/* if gpio control is enabled, we can disable through io only
++	 * else need to disable using register configuration
++	 */
++	if (en_pin->port != NULL) {
++		err = gpio_pin_set_dt(en_pin, 0);
++		if (err) {
++			LOG_ERR("en_gpio set low err: %d", err);
++		}
++	} else {
++		err = i2c_reg_update_byte_dt(&config->bus, LP55XX_ENABLE,
++					     LP55XX_ENABLE_CHIP_EN_MASK, LP55XX_ENABLE_CHIP_EN_CLR);
++		if (err == 0) {
++			k_msleep(1);
++		}
++	}
++	return err;
++}
++#endif
++
++static int lp55xx_led_init(const struct device *dev)
++{
++	const struct lp55xx_config *config = dev->config;
++	const struct gpio_dt_spec *en_pin = &config->en_pin;
++	int ret;
++	int config_byte = 0;
++
++	if (en_pin->port != NULL) {
++		if (!device_is_ready(en_pin->port)) {
++			return -ENODEV;
++		}
++		if (gpio_pin_configure_dt(en_pin, GPIO_OUTPUT_ACTIVE)) {
++			return -ENODEV;
++		}
++	}
++
++	if (!device_is_ready(config->bus.bus)) {
++		LOG_ERR("I2C device not ready");
++		return -ENODEV;
++	}
++
++	if (lp55xx_enable(dev) != 0) {
++		LOG_ERR("LP55XX Enable failed");
++		return -EIO;
++	}
++
++	ret = lp55xx_led_update_current(dev);
++	if (ret) {
++		LOG_ERR("Setting current setting LP55XX LED chip failed.");
++		return ret;
++	}
++
++	/* Fill all configurations */
++	config_byte |= (config->red_charge_pump_bypass ? LP5521_CONFIG_R_TO_BATT : 0);
++	config_byte |= LP5521_CONFIG_CP_MODE(config->charge_pump_mode);
++	config_byte |= LP55XX_CONFIG_CLK_SEL(config->clk_sel);
++	config_byte |= (config->hf_pwm_dis ? 0 : LP55XX_CONFIG_PWM_HW_FREQ_558);
++	config_byte |= (config->power_save_dis ? 0 : LP55XX_CONFIG_PWRSAVE_EN);
++	/* keep only supported config bits */
++	config_byte &= config->iface->config_mask;
++	if (i2c_reg_write_byte_dt(&config->bus, LP55XX_CONFIG, config_byte)) {
++		LOG_ERR("Configuring LP55XX LED chip failed.");
++		return -EIO;
++	}
++	return 0;
++}
++
++static const struct led_driver_api lp55xx_led_api = {
++    .blink = lp55xx_led_blink,
++    .set_brightness = lp55xx_led_set_brightness,
++    .on = lp55xx_led_on,
++    .off = lp55xx_led_off,
++};
++
++#ifdef CONFIG_PM_DEVICE
++static int lp55xx_pm_action(const struct device *dev, enum pm_device_action action)
++{
++	switch (action) {
++	case PM_DEVICE_ACTION_SUSPEND:
++		return lp55xx_disable(dev);
++	case PM_DEVICE_ACTION_RESUME:
++		return lp55xx_enable(dev);
++	default:
++		return -ENOTSUP;
++	}
++
++	return 0;
++}
++#endif /* CONFIG_PM_DEVICE */
++
++#define LP55XX_DEFINE(id, chip_id_val)                                                            \
++	BUILD_ASSERT(DT_INST_PROP(id, red_output_current) <= LP55XX_MAX_CURRENT_SETTING,          \
++		     "Red channel current must be between 0 and 25.5 mA.");                       \
++	BUILD_ASSERT(DT_INST_PROP(id, green_output_current) <= LP55XX_MAX_CURRENT_SETTING,        \
++		     "Green channel current must be between 0 and 25.5 mA.");                     \
++	BUILD_ASSERT(DT_INST_PROP(id, blue_output_current) <= LP55XX_MAX_CURRENT_SETTING,         \
++		     "Blue channel current must be between 0 and 25.5 mA.");                      \
++	BUILD_ASSERT(DT_INST_PROP_OR(id, white_output_current, 0) <= LP55XX_MAX_CURRENT_SETTING,  \
++		     "White channel current must be between 0 and 25.5 mA.");                     \
++	static const struct lp55xx_config lp55xx_config_##id = {                                  \
++	    .iface = &_lp55xx_ifaces[chip_id_val],                                                \
++	    .bus = I2C_DT_SPEC_INST_GET(id),                                                      \
++	    .wrgb_current =                                                                       \
++		{                                                                                 \
++		    DT_INST_PROP_OR(id, white_output_current, 0),                                 \
++		    DT_INST_PROP(id, red_output_current),                                         \
++		    DT_INST_PROP(id, green_output_current),                                       \
++		    DT_INST_PROP(id, blue_output_current),                                        \
++		},                                                                                \
++	    .clk_sel = DT_INST_PROP(id, clk_sel),                                                 \
++	    .hf_pwm_dis = DT_INST_PROP(id, hf_pwm_dis),                                           \
++	    .active_low = DT_INST_PROP(id, active_low),                                           \
++	    .log_scale_en = DT_INST_PROP(id, log_scale_en),                                       \
++	    .power_save_dis = DT_INST_PROP(id, power_save_dis),                                   \
++	    .charge_pump_mode = DT_INST_PROP_OR(id, charge_pump_mode, 0),                         \
++	    .red_charge_pump_bypass = DT_INST_PROP_OR(id, red_charge_pump_bypass, 0),             \
++	    .en_pin = GPIO_DT_SPEC_INST_GET_OR(id, en_gpios, {0}),                                \
++	};                                                                                        \
++                                                                                                  \
++	PM_DEVICE_DT_INST_DEFINE(id, lp55xx_pm_action);                                           \
++                                                                                                  \
++	struct lp55xx_data lp55xx_data_##id;                                                      \
++	DEVICE_DT_INST_DEFINE(id, &lp55xx_led_init, NULL, &lp55xx_data_##id, &lp55xx_config_##id, \
++			      POST_KERNEL, CONFIG_LED_INIT_PRIORITY, &lp55xx_led_api);
++
++#undef DT_DRV_COMPAT
++#define DT_DRV_COMPAT ti_lp5562
++DT_INST_FOREACH_STATUS_OKAY_VARGS(LP55XX_DEFINE, LP55XX_CHIP_ID_5562)
++
++#undef DT_DRV_COMPAT
++#define DT_DRV_COMPAT ti_lp5521
++DT_INST_FOREACH_STATUS_OKAY_VARGS(LP55XX_DEFINE, LP55XX_CHIP_ID_5521)
+diff --git a/dts/bindings/led/ti,lp5521.yaml b/dts/bindings/led/ti,lp5521.yaml
+new file mode 100644
+index 00000000000..ace1e2eff2d
+--- /dev/null
++++ b/dts/bindings/led/ti,lp5521.yaml
+@@ -0,0 +1,20 @@
++description: TI LP5521 LED
++
++compatible: "ti,lp5521"
++
++include: ti,lp55xx.yaml
++
++properties:
++  charge-pump-mode:
++    type: int
++    default: 3
++    enum:
++      - 0
++      - 1
++      - 2
++      - 3
++    description: configure charge-pump mode, 0=>off, 1=>1x, 2=>1.5x, 3=>auto
++
++  red-charge-pump-bypass:
++    type: boolean
++    description: bypass charge-pump for reg led, and connect it directly to batt
+diff --git a/dts/bindings/led/ti,lp5562.yaml b/dts/bindings/led/ti,lp5562.yaml
+index b2b0c4b484e..1b3b2665921 100644
+--- a/dts/bindings/led/ti,lp5562.yaml
++++ b/dts/bindings/led/ti,lp5562.yaml
+@@ -2,24 +2,9 @@ description: TI LP5562 LED
+ 
+ compatible: "ti,lp5562"
+ 
+-include: i2c-device.yaml
++include: ti,lp55xx.yaml
+ 
+ properties:
+-  red-output-current:
+-    type: int
+-    default: 175
+-    description: Output current of red channel in 0.1 mA (0-25.5 mA).
+-                 Default value is the power-on default. Valid range = 0 - 255
+-  green-output-current:
+-    type: int
+-    default: 175
+-    description: Output current of green channel in 0.1 mA (0-25.5 mA)
+-                 Default value is the power-on default. Valid range = 0 - 255
+-  blue-output-current:
+-    type: int
+-    default: 175
+-    description: Output current of blue channel in 0.1 mA (0-25.5 mA)
+-                 Default value is the power-on default. Valid range = 0 - 255
+   white-output-current:
+     type: int
+     default: 175
+diff --git a/dts/bindings/led/ti,lp55xx.yaml b/dts/bindings/led/ti,lp55xx.yaml
+new file mode 100644
+index 00000000000..90c634219ba
+--- /dev/null
++++ b/dts/bindings/led/ti,lp55xx.yaml
+@@ -0,0 +1,59 @@
++# Copyright (c) 2024 Croxel Inc
++# SPDX-License-Identifier: Apache-2.0
++
++include: ["i2c-device.yaml", "led-controller.yaml"]
++
++properties:
++  red-output-current:
++    type: int
++    default: 175
++    description: Output current of red channel in 0.1 mA (0-25.5 mA).
++                 Default value is the power-on default. Valid range = 0 - 255
++
++  green-output-current:
++    type: int
++    default: 175
++    description: Output current of green channel in 0.1 mA (0-25.5 mA)
++                 Default value is the power-on default. Valid range = 0 - 255
++
++  blue-output-current:
++    type: int
++    default: 175
++    description: Output current of blue channel in 0.1 mA (0-25.5 mA)
++                 Default value is the power-on default. Valid range = 0 - 255
++
++  clk-sel:
++    type: int
++    default: 3
++    enum:
++      - 0
++      - 1
++      - 2
++      - 3
++    description: select clock 0 => external, 1/3 => internal, 2=> auto-detect
++
++  hf-pwm-dis:
++    type: boolean
++    description: Enable high frequency pwm
++
++  power-save-dis:
++    type: boolean
++    description: Enable power save mode
++
++  en-gpios:
++    type: phandle-array
++    description: |
++      GPIO to enable LP55XX (both Charge-pump and Digital Communications interface).
++      If not provided, user must ensure enable pin is already asserted externally (e.g:
++      pull-up resistor).
++
++  log-scale-en:
++    type: boolean
++    description: |
++      Use logarithmic scale for pwm values instead of default linear scaling
++
++  active-low:
++    type: boolean
++    description: |
++      Are led's connected in active low or active high
++
+diff --git a/samples/drivers/led_lp5562/CMakeLists.txt b/samples/drivers/led_lp55xx/CMakeLists.txt
+similarity index 100%
+rename from samples/drivers/led_lp5562/CMakeLists.txt
+rename to samples/drivers/led_lp55xx/CMakeLists.txt
+diff --git a/samples/drivers/led_lp5562/README.rst b/samples/drivers/led_lp55xx/README.rst
+similarity index 100%
+rename from samples/drivers/led_lp5562/README.rst
+rename to samples/drivers/led_lp55xx/README.rst
+diff --git a/samples/drivers/led_lp55xx/boards/croxel_cx1825.overlay b/samples/drivers/led_lp55xx/boards/croxel_cx1825.overlay
+new file mode 100644
+index 00000000000..b8a7560e73c
+--- /dev/null
++++ b/samples/drivers/led_lp55xx/boards/croxel_cx1825.overlay
+@@ -0,0 +1,11 @@
++&i2c0 {
++	status = "okay";
++	clock-frequency = <I2C_BITRATE_STANDARD>;
++
++	lp5521: lp5521@32 {
++		status = "okay";
++		compatible = "ti,lp5521";
++		reg = <0x32>;
++		en-gpios = <&gpio1 13 GPIO_ACTIVE_HIGH>;
++	};
++};
+diff --git a/samples/drivers/led_lp5562/boards/nrf52840dk_nrf52840.overlay b/samples/drivers/led_lp55xx/boards/nrf52840dk_nrf52840.overlay
+similarity index 100%
+rename from samples/drivers/led_lp5562/boards/nrf52840dk_nrf52840.overlay
+rename to samples/drivers/led_lp55xx/boards/nrf52840dk_nrf52840.overlay
+diff --git a/samples/drivers/led_lp5562/prj.conf b/samples/drivers/led_lp55xx/prj.conf
+similarity index 100%
+rename from samples/drivers/led_lp5562/prj.conf
+rename to samples/drivers/led_lp55xx/prj.conf
+diff --git a/samples/drivers/led_lp5562/sample.yaml b/samples/drivers/led_lp55xx/sample.yaml
+similarity index 100%
+rename from samples/drivers/led_lp5562/sample.yaml
+rename to samples/drivers/led_lp55xx/sample.yaml
+diff --git a/samples/drivers/led_lp5562/src/main.c b/samples/drivers/led_lp55xx/src/main.c
+similarity index 100%
+rename from samples/drivers/led_lp5562/src/main.c
+rename to samples/drivers/led_lp55xx/src/main.c
+-- 
+2.40.1.windows.1
+
