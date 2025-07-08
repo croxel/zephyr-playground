@@ -1,0 +1,76 @@
+{
+	"folders": [
+		{
+			"name": "zephyr-playground",
+			"path": "."
+		},
+		{
+			"name": "zephyr",
+			"path": "../zephyr",
+		},
+		{
+			"name": "modules",
+			"path": "../modules",
+		},
+	],
+	"settings": {
+		"files.associations": {
+			"algorithm": "c",
+			"chrono": "c",
+			"complex": "c",
+			"expected": "c",
+			"functional": "c",
+			"optional": "c",
+			"regex": "c",
+			"system_error": "c",
+			"type_traits": "c",
+			"xlocmon": "c",
+			"xtr1common": "c",
+			"xutility": "c",
+			"clock_control.h": "c",
+			"dma.h": "c",
+			"xiosbase": "cpp",
+			"queue": "c",
+			"random": "c",
+			"iosfwd": "c",
+			"xlocbuf": "c",
+			"array": "c",
+			"span": "c",
+			"vector": "c",
+			"xstring": "c"
+		},
+		"cfs.configureWorkspace": "No",
+		// Set a workspace-specific environment for Windows
+		"terminal.integrated.env.windows": {
+			"ZEPHYR_BASE": "${workspaceFolder}/../zephyr",
+		}
+	},
+	"launch": {
+		"version": "0.2.0",
+		"configurations": [
+			{
+				"name": "Debug Attach Extended",
+				"request": "attach",
+				"armToolchainPath": "${env:GNUARMEMB_TOOLCHAIN_PATH}/bin",
+				"executable": "${workspaceRoot}/leap-firmware/applications/app/build_dvt_ext/zephyr/zephyr.elf",
+				"type": "cortex-debug",
+				"servertype": "jlink",
+				"device": "nRF5340_xxAA_APP",
+				"interface": "swd",
+				"cwd": "${workspaceRoot}/leap-firmware",
+				"svdFile": "${workspaceRoot}/modules/hal/nordic/nrfx/mdk/nrf5340_application.svd",
+			}
+		]
+	},
+	"tasks": {
+		"version": "2.0.0",
+		"tasks": [
+			{
+				"label": "West Build: Leap Extended Build",
+				"type": "shell",
+				"command": "west build -p -b storm_dvt_nrf5340_cpuapp ${workspaceRoot}/leap-firmware/applications/app -d ${workspaceRoot}/leap-firmware/applications/app/build_dvt_ext",
+				"problemMatcher": []
+			},
+		],
+	},
+}

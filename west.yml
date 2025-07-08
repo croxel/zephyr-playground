@@ -1,8 +1,8 @@
 manifest:
   projects:
     - name: zephyr
-      revision: v3.7.0
-      url: https://github.com/zephyrproject-rtos/zephyr
+      revision: feature-adi-max32-i2s-driver-tx-rx
+      url: https://github.com/croxel/zephyr
       import: true
 
   self:
