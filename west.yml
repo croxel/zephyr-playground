@@ -1,8 +1,16 @@
 manifest:
+  remotes:
+    - name: ncs
+      url-base: https://github.com/nrfconnect
+
+  defaults:
+    remote: ncs
+
   projects:
-    - name: zephyr
-      revision: feature-adi-max32-i2s-driver-tx-rx
-      url: https://github.com/croxel/zephyr
+    - name: nrf
+      repo-path: sdk-nrf
+      revision: v2.8.0
+      path: nrf
       import: true
 
   self:

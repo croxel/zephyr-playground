@@ -1,0 +1,64 @@
+&i2c131 {
+	compatible = "nordic,nrf-twim";
+	status = "okay";
+	pinctrl-1 = <&i2c131_sleep>;
+	pinctrl-0 = <&i2c131_default>;
+	pinctrl-names = "default", "sleep";
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+	memory-regions = <&cpuapp_dma_region>;
+
+	npm1300_ek_pmic: pmic@6b {
+		compatible = "nordic,npm1300";
+		reg = <0x6b>;
+		pmic_charger: charger {
+			compatible = "nordic,npm1300-charger";
+			term-microvolt = <4150000>;
+			term-warm-microvolt = <4000000>;
+			current-microamp = <150000>;
+			dischg-limit-microamp = <1000000>;
+			vbus-limit-microamp = <500000>;
+			thermistor-ohms = <0>;
+			thermistor-beta = <3380>;
+			charging-enable;
+		};
+		regulators {
+			compatible = "nordic,npm1300-regulator";
+			BUCK1 {
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-boot-on;
+			};
+			BUCK2 {
+				regulator-min-microvolt = <3000000>;
+				regulator-max-microvolt = <3000000>;
+				regulator-boot-on;
+			};
+		};
+
+		npm1300_ek_leds: leds {
+			compatible = "nordic,npm1300-led";
+			nordic,led0-mode = "error";
+			nordic,led1-mode = "charging";
+			nordic,led2-mode = "host";
+		};
+	};
+
+};
+
+&pinctrl {
+	i2c131_default: i2c131_default {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SCL, 1, 0)>,
+					<NRF_PSEL(TWIM_SDA, 1, 4)>;
+			bias-pull-up;
+		};
+	};
+
+	i2c131_sleep: i2c131_sleep {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SCL, 1, 0)>,
+					<NRF_PSEL(TWIM_SDA, 1, 4)>;
+			low-power-enable;
+		};
+	};
+};

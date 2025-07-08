@@ -9,6 +9,10 @@
 			"path": "../zephyr",
 		},
 		{
+			"name": "nrf",
+			"path": "../nrf",
+		},
+		{
 			"name": "modules",
 			"path": "../modules",
 		},
@@ -43,7 +47,10 @@
 		// Set a workspace-specific environment for Windows
 		"terminal.integrated.env.windows": {
 			"ZEPHYR_BASE": "${workspaceFolder}/../zephyr",
-		}
+			"PYTHONPATH": "${workspaceFolder}/../.zpenv/Scripts/python.exe",
+		},
+		"python.defaultInterpreterPath": "${workspaceFolder}/../.zpenv/Scripts/python.exe",
+		"python.terminal.activateEnvironment": true,
 	},
 	"launch": {
 		"version": "0.2.0",

@@ -1,0 +1,10 @@
+sample:
+  description: Bring up sample application for CX1827 Board
+  name: Bring Up Sample
+common:
+  tags: introduction
+  integration_platforms:
+    - nrf54h20dk@0.8.0/nrf54h20/cpuapp
+tests:
+  sample.bringup:
+    tags: introduction
