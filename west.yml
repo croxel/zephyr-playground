@@ -9,7 +9,7 @@ manifest:
   projects:
     - name: nrf
       repo-path: sdk-nrf
-      revision: v2.8.0
+      revision: v3.1.0-preview4
       path: nrf
       import: true
 

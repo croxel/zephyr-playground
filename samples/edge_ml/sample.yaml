@@ -1,0 +1,10 @@
+sample:
+  description: Edge ML sample for nRF54L15DK
+  name: Edge ML Sample
+common:
+  tags: introduction
+  integration_platforms:
+    - nrf54l15dk/nrf54l15/cpuapp
+tests:
+  sample.edge_ml:
+    tags: introduction
