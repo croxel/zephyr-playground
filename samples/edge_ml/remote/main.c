@@ -3,11 +3,11 @@
 #include <zephyr/drivers/gpio.h>
 
 /* 100 msec = 1 sec */
-#define ON_TIME_MS    50
-#define OFF_TIME_MS   950
+#define ON_TIME_MS  50
+#define OFF_TIME_MS 950
 
 /* The devicetree node identifier for the "led0" alias. */
-#define LED0_NODE DT_ALIAS(led0)
+#define LED0_NODE DT_ALIAS(led1)
 
 /*
  * A build error on this line means your board is unsupported.
@@ -29,6 +29,9 @@ int main(void)
 	if (ret < 0) {
 		return 0;
 	}
+
+	k_msleep(OFF_TIME_MS);
+	k_msleep(OFF_TIME_MS);
 
 	while (1) {
 		ret = gpio_pin_toggle_dt(&led);

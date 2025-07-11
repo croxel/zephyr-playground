@@ -21,7 +21,6 @@ static int sensor_value_to_int16(const struct sensor_value *val)
 
 static int process_icm45686(const struct device *dev)
 {
-	struct sensor_value temperature;
 	struct sensor_value accel[3];
 	struct sensor_value gyro[3];
 	int rc = sensor_sample_fetch(dev);
