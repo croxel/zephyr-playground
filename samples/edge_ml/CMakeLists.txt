@@ -10,7 +10,18 @@ project(edge_ml)
 # used when building MCUboot.
 test_sysbuild()
 
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/neuton-ai/neuton/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/neuton-ai)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 target_sources(app PRIVATE
-    src/main.c
-#     src/imu_sample_collector.c
+	src/ble.c
+	src/bsp.c
+	src/channel.c
+	src/imu_sample_collector.c
+	src/inference_runner.c
+	src/logger.c
+	src/main.c
 )
+
+zephyr_link_libraries(${CMAKE_CURRENT_LIST_DIR}/src/neuton-ai/neuton/lib/libneuton_arm_cortex-m33.a)
